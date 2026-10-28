@@ -5,7 +5,7 @@
 - Base URL：`http://localhost:7100/api/tasks`（桌面 App 默认 7100，被占用时自动换端口，以实际为准；开发服务器默认 3000）
 - 数据格式：JSON，UTF-8
 - 所有写操作实时持久化到明文文件（Markdown，Agent 也可直接读写）：
-  - 数据文件路径由环境变量 `TODO_DATA_FILE` 指定（开发者机器）
+  - 开发者机器：`/Users/vivo/Desktop/AI探索/日程待办APP/data/tasks.md`
   - 其他机器默认：`~/Documents/日程待办/tasks.md`，可用环境变量 `TODO_DATA_FILE` 自定义
 
 ## 任务对象 Task
@@ -78,7 +78,7 @@ Web 前端使用的批量写入方式，body 为 `{ "tasks": Task[] }`，会整�
 
 ### AI 分析建待办 `POST /api/tasks/analyze`
 
-接收外部工具传入的**原文**，调用本地 AI 模型提炼为结构化待办并落库。面向不理解日程语义的上游工具：上游只传原文，提炼由本服务负责。
+接收外部工具传入的**原文**，调用本地 AI 模型提炼为结构化待办并落库。面向不理解日程语义的上游（如 Tendedero 截图晾衣绳的文本便签）：上游只传原文，提炼由本服务负责。
 
 ```bash
 curl -X POST http://localhost:7100/api/tasks/analyze \

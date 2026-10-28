@@ -1,13 +1,13 @@
 # 日程待办 · 数据与 API 契约
 
-> 本文档固化「日程待办 App」与外部 Agent 流程之间的双边契约。
+> 本文档固化「日程待办 App」与外部 Agent 流程（vChat 待办抓取、工作总结等）之间的双边契约。
 > **任何对本契约的变更必须同步通知所有依赖方**，并更新本文档与 `app/API.md`。
 >
 > 依赖方清单（变更时需逐一确认）：
-> 1. 消息待办抓取定时任务（写入方）
+> 1. vChat 消息待办抓取定时任务（每周一至五 18:00，写入方）
 > 2. 工作总结流程（读取方，解析 `completedAt` / 正文结构化字段）
 > 3. 桌面悬浮小组件（读写方）
-> 4. 外部工具传入原文建待办（写入方，经 `POST /api/tasks/analyze` 传原文，由本服务 AI 提炼落库）
+> 4. Tendedero 截图晾衣绳（写入方，经 `POST /api/tasks/analyze` 传原文，由本服务 AI 提炼落库）
 > 5. 其他通过 REST API 写入的脚本/Agent
 
 ---
@@ -16,7 +16,7 @@
 
 | 项 | 值 |
 |---|---|
-| 开发者机器路径 | 环境变量 `TODO_DATA_FILE` 指定 |
+| 开发者机器路径 | `/Users/vivo/Desktop/AI探索/日程待办APP/data/tasks.md` |
 | 其他机器默认 | `~/Documents/日程待办/tasks.md` |
 | 环境变量覆盖 | `TODO_DATA_FILE` |
 | 备份目录 | `<数据文件所在目录>/backups/tasks-YYYYMMDD-HHMM.md`，每日自动备份、保留 30 份 |

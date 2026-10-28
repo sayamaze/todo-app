@@ -11,7 +11,12 @@ const { createTasksApiHandler, createImagesApiHandler } = require("./api.bundle.
 // 3. 其他机器默认存到 ~/Documents/日程待办/tasks.md（明文、可见、可分享）
 function resolveDataFile() {
   if (process.env.TODO_DATA_FILE) return process.env.TODO_DATA_FILE;
-  // 开发者机器：优先检查 TODO_DATA_FILE 环境变量；否则用 ~/Documents/日程待办/tasks.md
+  const legacy = "/Users/vivo/Desktop/AI探索/日程待办APP/data/tasks.md";
+  try {
+    if (fs.existsSync(path.dirname(legacy))) return legacy;
+  } catch {
+    /* 无访问权限时走默认路径 */
+  }
   const os = require("os");
   return path.join(os.homedir(), "Documents", "日程待办", "tasks.md");
 }

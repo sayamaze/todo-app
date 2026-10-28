@@ -2007,7 +2007,7 @@ curl -s http://localhost:7100/api/tasks/completed`}</ApiCode>
               <ul className="list-inside list-disc space-y-1 text-muted-foreground">
                 <li>今天 / 明天 / 最近7天 / 全部：按日期分组查看待办，「明天」视图下创建任务默认日期为明天</li>
                 <li>四象限：按重要度（优先级）× 紧急度（日期 ≤ 今天）分类，可拖动卡片到其他象限自动调整优先级与日期</li>
-                <li>项目：按标签分列看板（项目标签列 + 日常工作兜底列），可拖动卡片到其他列调整归属标签</li>
+                <li>项目：按标签分列看板（AI成本 / X500U / X600 / 日常工作），可拖动卡片到其他列调整归属标签</li>
                 <li>点击任务上的 #标签，可切换查看该类别下的清单</li>
               </ul>
             </section>

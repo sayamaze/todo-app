@@ -1,7 +1,8 @@
-const { app, BrowserWindow, shell, screen, Tray, Menu, nativeImage, Notification } = require("electron");
+const { app, BrowserWindow, shell, screen, Tray, Menu, nativeImage, Notification, dialog } = require("electron");
 const fs = require("fs");
 const path = require("path");
 const { startServer, DATA_FILE } = require("./server.cjs");
+const { autoUpdater } = require("electron-updater");
 
 // 单实例锁：重复启动时聚焦已有窗口，避免多个服务器互相抢端口
 const gotLock = app.requestSingleInstanceLock();
@@ -298,6 +299,7 @@ if (!gotLock) {
     createMainWindow();
     createTray();
     scheduleReminder();
+    setupAutoUpdater();
     // 上次退出时小组件是开着的，则自动恢复
     const widgetState = loadState("widget-visible.json");
     if (widgetState?.visible) createWidgetWindow();
@@ -322,4 +324,48 @@ if (!gotLock) {
   app.on("window-all-closed", () => {
     // 保持运行
   });
+}
+
+// ---------- 自动更新（GitHub Release） ----------
+function setupAutoUpdater() {
+  autoUpdater.autoDownload = false; // 检测到新版本后先弹提示，用户确认再下载
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on("update-available", (info) => {
+    dialog
+      .showMessageBox({
+        type: "info",
+        title: "发现新版本",
+        message: `新版本 v${info.version} 已发布，是否下载更新？`,
+        buttons: ["下载更新", "稍后"],
+        defaultId: 0,
+        cancelId: 1,
+      })
+      .then(({ response }) => {
+        if (response === 0) autoUpdater.downloadUpdate();
+      });
+  });
+
+  autoUpdater.on("update-downloaded", () => {
+    dialog
+      .showMessageBox({
+        type: "info",
+        title: "更新已就绪",
+        message: "新版本已下载完成，重启应用后生效。",
+        buttons: ["立即重启", "稍后"],
+        defaultId: 0,
+        cancelId: 1,
+      })
+      .then(({ response }) => {
+        if (response === 0) autoUpdater.quitAndInstall();
+      });
+  });
+
+  autoUpdater.on("error", (err) => {
+    console.error("autoUpdater error:", err.message);
+  });
+
+  // 启动后 10s 首次检查，之后每 4 小时检查一次
+  setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 10 * 1000);
+  setInterval(() => autoUpdater.checkForUpdates().catch(() => {}), 4 * 60 * 60 * 1000);
 }

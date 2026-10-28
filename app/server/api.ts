@@ -342,7 +342,7 @@ export function createTasksApiHandler(dataFile: string) {
         return respond(200, { tags });
       }
 
-      // ---------- AI 分析建待办（Tendedero 等外部工具传入原文 → AI 提炼 → 建待办） ----------
+      // ---------- AI 分析建待办（外部工具传入原文 → AI 提炼 → 建待办） ----------
       if (segments[0] === "analyze" && method === "POST") {
         let body: { text?: unknown; source?: unknown };
         try {
@@ -384,7 +384,7 @@ export function createTasksApiHandler(dataFile: string) {
         const description = source ? `来源：${source}\n\n${text}` : text;
         // 标签规则：只保留已有标签中匹配到的 + 强制添加来源标签
         const matchedTags = sanitizeTags(a.tags).filter((tag) => existingTags.includes(tag));
-        const sourceTag = source ?? "Tendedero";
+        const sourceTag = source ?? "external";
         const task: Task = {
           id: newId(),
           title: a.title,

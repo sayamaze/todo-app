@@ -15,7 +15,7 @@
   },
   "build": {
     "appId": "com.local.richangdaiban",
-    "productName": "日程待办",
+    "productName": "richang-daiban",
     "directories": {
       "output": "release"
     },
@@ -29,7 +29,13 @@
       "target": [
         "dmg"
       ],
-      "identity": null
+      "identity": null,
+      "artifactName": "richang-daiban-${version}-arm64.${ext}"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "sayamaze",
+      "repo": "todo-app"
     }
   },
   "dependencies": {
@@ -64,6 +70,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
+    "electron-updater": "^6.8.11",
     "embla-carousel-react": "^8.6.0",
     "input-otp": "^1.4.2",
     "lucide-react": "^0.562.0",

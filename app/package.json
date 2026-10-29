@@ -32,13 +32,13 @@
         "dmg"
       ],
       "identity": null,
-      "artifactName": "日程待办-${version}-${arch}.${ext}"
+      "artifactName": "richang-daiban-${version}-${arch}.${ext}"
     },
     "win": {
       "target": [
         "nsis"
       ],
-      "artifactName": "日程待办-${version}-setup.${ext}"
+      "artifactName": "richang-daiban-${version}-setup.${ext}"
     },
     "nsis": {
       "oneClick": false,

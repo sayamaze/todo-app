@@ -54,6 +54,7 @@ import {
 import {
   hasUrl,
   parseTagsInput,
+  parseDescription,
   enforceDailyExclusive,
   DAILY_WORK_TAG,
   tagChipClass,
@@ -277,14 +278,18 @@ export default function Home() {
   const [file, setFile] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  /** "today" | "week" | `tag:某标签` */
+  /** "today" | "week" | "outgoing" | "incoming" | `tag:某标签` */
   const [view, setView] = useState<string>("today");
   const [showDone, setShowDone] = useState(false);
+  /** 「我收到的」视图下按发起人筛选（null = 全部） */
+  const [initiatorFilter, setInitiatorFilter] = useState<string | null>(null);
 
   // 新增表单
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
   const [tagsText, setTagsText] = useState("");
+  /** 创建框是否已激活（点击后展开正文/标签/优先级等字段） */
+  const [createExpanded, setCreateExpanded] = useState(false);
   /** 手动选择的日期；undefined = 未手动选择，跟随视图默认值（渲染时实时计算，跨天不会过期） */
   const [dateOverride, setDateOverride] = useState<string | null | undefined>(undefined);
   const [priority, setPriority] = useState<Priority>("none");
@@ -334,6 +339,8 @@ export default function Home() {
   const reconnectTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   /** 数据文件版本（mtime），用于感知外部（如 Agent 工具）对 md 文件的修改 */
   const mtimeRef = useRef(0);
+  /** 创建框容器 ref，用于失焦自动收起 */
+  const createFormRef = useRef<HTMLDivElement>(null);
 
   /** 连接断开时每 4 秒自动重连，恢复后自动刷新数据并清除错误 */
   const scheduleReconnect = useCallback(() => {
@@ -391,9 +398,10 @@ export default function Home() {
     return () => clearInterval(timer);
   }, [load]);
 
-  /** 切换视图时清除手动选择的日期，恢复跟随视图默认值 */
+  /** 切换视图时清除手动选择的日期 + 重置发起人筛选 */
   useEffect(() => {
     setDateOverride(undefined);
+    if (view !== "incoming") setInitiatorFilter(null);
   }, [view]);
 
   /** 跨天监听：App 常驻运行（关窗不退出），午夜后触发重渲染，让“今天/明天”等派生值自动换新 */
@@ -416,6 +424,33 @@ export default function Home() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [selected.size, editing, showHelp]);
+
+  /** 创建框 ESC 收起展开态 */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && createExpanded && !title.trim() && !desc.trim() && !tagsText.trim()) {
+        setCreateExpanded(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [createExpanded, title, desc, tagsText]);
+
+  /** 创建框失焦自动收起：焦点离开整个表单区域且内容为空时收起 */
+  useEffect(() => {
+    if (!createExpanded) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (
+        createFormRef.current &&
+        !createFormRef.current.contains(e.target as Node) &&
+        !title.trim() && !desc.trim() && !tagsText.trim()
+      ) {
+        setCreateExpanded(false);
+      }
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, [createExpanded, title, desc, tagsText]);
 
   const mutate = useCallback(
     (fn: (prev: Task[]) => Task[]) => {
@@ -484,6 +519,7 @@ export default function Home() {
     setPriority("none");
     setRecur(null);
     setDateOverride(undefined);
+    setCreateExpanded(false);
   };
 
   const openEdit = (task: Task) => {
@@ -573,6 +609,20 @@ export default function Home() {
       for (const tag of t.tags ?? []) count.set(tag, (count.get(tag) ?? 0) + 1);
     }
     return [...count.entries()].sort((a, b) => b[1] - a[1]).map(([tag]) => tag);
+  }, [tasks]);
+
+  /** 「我收到的」任务中所有发起人姓名（按出现频率排序） */
+  const allInitiators = useMemo(() => {
+    const count = new Map<string, number>();
+    for (const t of tasks) {
+      if (t.done) continue;
+      if (taskDirection(t) !== "incoming") continue;
+      const p = parseDescription(t.description ?? "");
+      for (const b of p.blocks) {
+        if (b.initiator) count.set(b.initiator, (count.get(b.initiator) ?? 0) + 1);
+      }
+    }
+    return [...count.entries()].sort((a, b) => b[1] - a[1]).map(([name]) => name);
   }, [tasks]);
 
   /** 标签输入自动补全：基于输入串最后一个空格之后的「正在输入的词」过滤已有标签。
@@ -687,6 +737,39 @@ export default function Home() {
     const t = todayStr();
     const active = tasks.filter((x) => !x.done);
 
+    // 「我提出的」/「我收到的」视图：按方向筛选后按日期分组
+    if (view === "outgoing" || view === "incoming") {
+      let filtered = active.filter((x) => taskDirection(x) === view);
+      // 「我收到的」支持按发起人姓名二次筛选
+      if (view === "incoming" && initiatorFilter) {
+        filtered = filtered.filter((x) => {
+          const p = parseDescription(x.description ?? "");
+          return p.blocks.some((b) => b.initiator === initiatorFilter);
+        });
+      }
+      const result: DayGroup[] = [];
+      const overdue = filtered
+        .filter((x) => x.date !== null && x.date < t)
+        .sort(sortInGroup);
+      const dates = [
+        ...new Set(filtered.filter((x) => x.date !== null && x.date >= t).map((x) => x.date!)),
+      ].sort();
+      for (const d of dates) {
+        result.push({
+          key: d,
+          label: dateLabel(d),
+          sub: d,
+          tasks: filtered.filter((x) => x.date === d).sort(sortInGroup),
+        });
+      }
+      const noDate = filtered.filter((x) => x.date === null).sort(sortInGroup);
+      if (noDate.length)
+        result.push({ key: "nodate", label: "无日期", dropDate: null, tasks: noDate });
+      if (overdue.length)
+        result.push({ key: "overdue", label: "已过期", overdue: true, tasks: overdue });
+      return result;
+    }
+
     // 标签视图：只看该标签下的任务，按日期分组
     // 「日常工作」额外包含无标签任务（默认归集）
     if (activeTag) {
@@ -755,10 +838,16 @@ export default function Home() {
     if (overdue.length)
       result.push({ key: "overdue", label: "已过期", overdue: true, tasks: overdue });
     return result;
-  }, [tasks, view, activeTag]);
+  }, [tasks, view, activeTag, initiatorFilter]);
 
   const doneTasks = useMemo(() => {
     const done = tasks.filter((x) => x.done);
+    // 方向视图（我提出的/我收到的）优先于标签筛选
+    if (view === "outgoing" || view === "incoming") {
+      return done
+        .filter((x) => taskDirection(x) === view)
+        .sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? ""));
+    }
     const filtered = activeTag
       ? done.filter((x) =>
           activeTag === DAILY_WORK_TAG
@@ -767,7 +856,7 @@ export default function Home() {
         )
       : done;
     return filtered.sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? ""));
-  }, [tasks, activeTag]);
+  }, [tasks, view, activeTag]);
 
   /** 已完成任务按 ISO 周（周一起）分组，供归档视图与周统计使用 */
   interface DoneWeek {
@@ -1112,7 +1201,56 @@ export default function Home() {
           </div>
         </header>
 
-        {/* 视图切换 + 标签筛选 */}
+        {/* 方向维度切换：全部 / 我提出的 / 我收到的（一级 Tab，独立于时间/标签维度） */}
+        <div className="mb-4 flex items-center gap-2">
+          <div className="inline-flex rounded-full border bg-card p-1 shadow-sm">
+            {(
+              [
+                [null, "全部"],
+                ["outgoing", "我提出的"],
+                ["incoming", "我收到的"],
+              ] as const
+            ).map(([v, label]) => (
+              <button
+                key={label}
+                onClick={() => {
+                  setView(v ?? "today");
+                  if (v !== "incoming") setInitiatorFilter(null);
+                }}
+                className={cn(
+                  "rounded-full px-4 py-1.5 text-sm font-medium transition-all",
+                  (v === null ? view !== "outgoing" && view !== "incoming" : view === v)
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {/* 「我收到的」激活时，显示发起人姓名筛选 */}
+          {view === "incoming" && allInitiators.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              {allInitiators.map((name) => (
+                <button
+                  key={name}
+                  onClick={() => setInitiatorFilter(initiatorFilter === name ? null : name)}
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium shadow-sm transition-all",
+                    initiatorFilter === name
+                      ? "border-transparent bg-blue-500 text-white"
+                      : "border-transparent bg-card text-blue-600 hover:bg-blue-50"
+                  )}
+                >
+                  {name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 视图切换 + 标签筛选（方向视图激活时隐藏，方向本身即筛选维度） */}
+        {view !== "outgoing" && view !== "incoming" && (
         <div className="mb-5 flex flex-wrap items-center gap-2">
           <div className="inline-flex rounded-full border bg-card p-1 shadow-sm">
             {(
@@ -1174,6 +1312,7 @@ export default function Home() {
             </div>
           )}
         </div>
+        )}
 
         {error && (
           <div className="mb-4 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-2.5 text-sm text-destructive">
@@ -1181,85 +1320,106 @@ export default function Home() {
           </div>
         )}
 
-        {/* 新增任务 */}
-        <div className="mb-8 rounded-2xl border bg-card p-4 shadow-sm transition-shadow focus-within:border-primary/40 focus-within:shadow">
-          <Input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && !isImeComposing(e) && addTask()}
-            placeholder="添加任务，回车快速创建"
-            className="border-0 px-1 text-base shadow-none focus-visible:ring-0"
-          />
-          <Textarea
-            value={desc}
-            onChange={(e) => setDesc(e.target.value)}
-            onKeyDown={cmdEnter(addTask)}
-            placeholder="正文描述（可选，⌘+回车 完成添加）"
-            rows={2}
-            className="mt-1 resize-none border-0 px-1 text-[15px] shadow-none focus-visible:ring-0"
-          />
-          <div className="relative mt-1 flex items-center gap-1.5 px-1">
-            <Tag className="size-3.5 shrink-0 text-muted-foreground/70" />
-            <input
-              value={tagsText}
-              onChange={(e) => {
-                setTagsText(e.target.value);
-                setCreateTagSel(-1);
-                setTagBrowse(false);
-              }}
-              onKeyDown={(e) =>
-                tagInputKeyDown(e, tagsText, setTagsText, { idx: createTagSel, setIdx: setCreateTagSel }, addTask)
-              }
-              onBlur={() => {
-                setCreateTagSel(-1);
-                setTagBrowse(false);
-              }}
-              placeholder="标签，空格分隔（可选，输入可补全已有标签）"
-              className="w-full bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground/60"
-            />
-            <TagSuggestDropdown
-              text={tagsText}
-              selIdx={createTagSel}
-              forceOpen={tagBrowse}
-              onPick={(t) => {
-                setTagsText(applyTagSuggestion(tagsText, t));
-                setCreateTagSel(-1);
-                setTagBrowse(false);
-              }}
-            />
-          </div>
-          <div className="mt-2 flex items-center gap-2 border-t pt-3">
-            <DatePicker date={formDate} onChange={setDateOverride} align="start">
-              <button className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-muted/70 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-                <CalendarIcon className="size-3.5" />
-                {formDate ? dateLabel(formDate) : "无日期"}
-              </button>
-            </DatePicker>
-            <PriorityMenu priority={priority} onChange={setPriority}>
-              <button className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-muted/70 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-                <Flag className={cn("size-3.5", PRIORITY_TEXT[priority])} />
-                {PRIORITY_LABEL[priority]}优先级
-                <ChevronDown className="size-3 opacity-60" />
-              </button>
-            </PriorityMenu>
-            <RecurMenu recur={recur} onChange={setRecur}>
-              <button className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-muted/70 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-                <Repeat className={cn("size-3.5", recur ? "text-emerald-500" : "text-muted-foreground")} />
-                {recurLabel(recur)}
-                <ChevronDown className="size-3 opacity-60" />
-              </button>
-            </RecurMenu>
-            <div className="flex-1" />
-            <Button
-              size="sm"
-              className="h-8 gap-1 rounded-lg px-4"
-              onClick={addTask}
-              disabled={!title.trim()}
-            >
+        {/* 新增任务：未激活时紧凑显示（仅标题），点击后展开完整字段 */}
+        <div
+          ref={createFormRef}
+          className={cn(
+            "mb-8 rounded-2xl border bg-card shadow-sm transition-all",
+            createExpanded
+              ? "p-4 focus-within:border-primary/40 focus-within:shadow"
+              : "cursor-pointer px-4 py-3 hover:border-primary/30 hover:shadow"
+          )}
+          onClick={() => {
+            if (!createExpanded) setCreateExpanded(true);
+          }}
+        >
+          {createExpanded ? (
+            <>
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && !isImeComposing(e) && addTask()}
+                placeholder="添加任务，回车快速创建"
+                className="border-0 px-1 text-base shadow-none focus-visible:ring-0"
+                autoFocus
+              />
+              <Textarea
+                value={desc}
+                onChange={(e) => setDesc(e.target.value)}
+                onKeyDown={cmdEnter(addTask)}
+                placeholder="正文描述（可选，⌘+回车 完成添加）"
+                rows={2}
+                className="mt-1 resize-none border-0 px-1 text-[15px] shadow-none focus-visible:ring-0"
+              />
+              <div className="relative mt-1 flex items-center gap-1.5 px-1">
+                <Tag className="size-3.5 shrink-0 text-muted-foreground/70" />
+                <input
+                  value={tagsText}
+                  onChange={(e) => {
+                    setTagsText(e.target.value);
+                    setCreateTagSel(-1);
+                    setTagBrowse(false);
+                  }}
+                  onKeyDown={(e) =>
+                    tagInputKeyDown(e, tagsText, setTagsText, { idx: createTagSel, setIdx: setCreateTagSel }, addTask)
+                  }
+                  onBlur={() => {
+                    setCreateTagSel(-1);
+                    setTagBrowse(false);
+                  }}
+                  placeholder="标签，空格分隔（可选，输入可补全已有标签）"
+                  className="w-full bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground/60"
+                />
+                <TagSuggestDropdown
+                  text={tagsText}
+                  selIdx={createTagSel}
+                  forceOpen={tagBrowse}
+                  onPick={(t) => {
+                    setTagsText(applyTagSuggestion(tagsText, t));
+                    setCreateTagSel(-1);
+                    setTagBrowse(false);
+                  }}
+                />
+              </div>
+              <div className="mt-2 flex items-center gap-2 border-t pt-3">
+                <DatePicker date={formDate} onChange={setDateOverride} align="start">
+                  <button className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-muted/70 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                    <CalendarIcon className="size-3.5" />
+                    {formDate ? dateLabel(formDate) : "无日期"}
+                  </button>
+                </DatePicker>
+                <PriorityMenu priority={priority} onChange={setPriority}>
+                  <button className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-muted/70 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                    <Flag className={cn("size-3.5", PRIORITY_TEXT[priority])} />
+                    {PRIORITY_LABEL[priority]}优先级
+                    <ChevronDown className="size-3 opacity-60" />
+                  </button>
+                </PriorityMenu>
+                <RecurMenu recur={recur} onChange={setRecur}>
+                  <button className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-muted/70 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                    <Repeat className={cn("size-3.5", recur ? "text-emerald-500" : "text-muted-foreground")} />
+                    {recurLabel(recur)}
+                    <ChevronDown className="size-3 opacity-60" />
+                  </button>
+                </RecurMenu>
+                <div className="flex-1" />
+                <Button
+                  size="sm"
+                  className="h-8 gap-1 rounded-lg px-4"
+                  onClick={addTask}
+                  disabled={!title.trim()}
+                >
+                  <Plus className="size-4" />
+                  添加
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center gap-2 text-muted-foreground/60">
               <Plus className="size-4" />
-              添加
-            </Button>
-          </div>
+              <span className="text-sm">添加任务…</span>
+            </div>
+          )}
         </div>
 
         {/* 分组列表 */}

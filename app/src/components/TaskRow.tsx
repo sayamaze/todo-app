@@ -300,7 +300,8 @@ export function TaskRow({
                   子待办 {subDone}/{subtasks.length}
                 </span>
               )}
-              {tags.map((tag) => (
+              {/* 已在来源徽章中展示的 tag 不重复渲染（如 #tendedero 与 💬tendedero 徽章） */}
+              {tags.filter((tag) => !parsed.blocks.some((b) => b.source && b.source.toLowerCase() === tag.toLowerCase())).map((tag) => (
                 <button
                   key={tag}
                   onClick={(e) => {

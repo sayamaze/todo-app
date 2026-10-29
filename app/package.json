@@ -17,7 +17,7 @@
   },
   "build": {
     "appId": "com.local.richangdaiban",
-    "productName": "richang-daiban",
+    "productName": "日程待办",
     "directories": {
       "output": "release"
     },
@@ -32,13 +32,13 @@
         "dmg"
       ],
       "identity": null,
-      "artifactName": "richang-daiban-${version}-${arch}.${ext}"
+      "artifactName": "日程待办-${version}-${arch}.${ext}"
     },
     "win": {
       "target": [
         "nsis"
       ],
-      "artifactName": "richang-daiban-${version}-setup.${ext}"
+      "artifactName": "日程待办-${version}-setup.${ext}"
     },
     "nsis": {
       "oneClick": false,
